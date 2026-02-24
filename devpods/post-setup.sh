@@ -17,7 +17,7 @@ export PATH="$HOME/.local/bin:$HOME/.claude/bin:$PATH"
 
 # Colors for output
 readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
+readonly YELLOW='\033[0;33m'
 readonly BLUE='\033[0;34m'
 readonly CYAN='\033[0;36m'
 readonly NC='\033[0m' # No Color
@@ -29,9 +29,9 @@ section() { echo -e "${CYAN}━━━ $* ━━━${NC}"; }
 
 cat << 'EOF'
 ╔══════════════════════════════════════════════════════════════════╗
-║                  Turbo Flow V3.1.0 Post-Setup                    ║
-║         Configure & Enable All Claude Flow Components            ║
-║     + Worktree Manager + Vercel Deploy + RuV Viz + Statusline    ║
+║                  Turbo Flow V3.3.0 Post-Setup                    ║
+║         Configure & Enable ALL Claude Flow Components            ║
+║    38 Native Skills + 15 Plugins + Memory + MCP + Extensions    ║
 ╚══════════════════════════════════════════════════════════════════╝
 EOF
 
@@ -46,10 +46,16 @@ skill_has_content() {
     [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]
 }
 
+skill_is_installed() {
+    local skill_name="$1"
+    local skill_dir="$HOME/.claude/skills/$skill_name"
+    skill_has_content "$skill_dir"
+}
+
 # ============================================================================
-# STEP 1: Verify Core Installations (delegated components)
+# STEP 1: Verify Core Installations
 # ============================================================================
-info "Step 1: Verifying core installations (from claude-flow installer)..."
+info "Step 1: Verifying core installations..."
 
 # Build tools
 if command -v g++ >/dev/null 2>&1 && command -v make >/dev/null 2>&1; then
@@ -58,11 +64,11 @@ else
     warning "Build tools not found"
 fi
 
-# jq (required for worktree-manager)
+# jq (required for worktree-manager and statusline)
 if command -v jq >/dev/null 2>&1; then
     success "jq: $(jq --version 2>/dev/null)"
 else
-    warning "jq not found (required for worktree-manager)"
+    warning "jq not found (required for worktree-manager and statusline)"
 fi
 
 # Node.js & npm
@@ -102,7 +108,6 @@ elif npx -y ruvector --version >/dev/null 2>&1; then
     success "RuVector: available via npx"
 else
     warning "RuVector not installed"
-    info "  └─ Install: npm install -g ruvector"
 fi
 
 # @ruvector/cli (for hooks)
@@ -110,7 +115,6 @@ if npm list -g @ruvector/cli --depth=0 >/dev/null 2>&1; then
     success "@ruvector/cli: installed"
 else
     warning "@ruvector/cli not installed"
-    info "  └─ Install: npm install -g @ruvector/cli"
 fi
 
 # sql.js (for memory database WASM fallback)
@@ -118,7 +122,6 @@ if npm list -g sql.js --depth=0 >/dev/null 2>&1 || npm list sql.js --depth=0 >/d
     success "sql.js: installed (memory database)"
 else
     warning "sql.js not installed (memory database may fail)"
-    info "  └─ Install: npm install -g sql.js"
 fi
 
 # AgentDB (vector memory with HNSW)
@@ -126,13 +129,12 @@ if npm list -g agentdb --depth=0 >/dev/null 2>&1; then
     success "agentdb: $(npm list -g agentdb --depth=0 2>/dev/null | grep agentdb | head -1)"
 else
     info "agentdb: not installed (optional, for 150x faster vector search)"
-    info "  └─ Install: npm install -g agentdb"
 fi
 
 echo ""
 
 # ============================================================================
-# STEP 2: Verify Ecosystem Packages (unique to setup.sh)
+# STEP 2: Verify Ecosystem Packages
 # ============================================================================
 info "Step 2: Verifying ecosystem packages..."
 
@@ -153,10 +155,9 @@ else
     warning "agent-browser not found"
 fi
 
-# @claude-flow/browser (part of claude-flow, not separate npm package)
+# @claude-flow/browser (part of claude-flow)
 if [ -d "$WORKSPACE_FOLDER/.claude-flow" ]; then
     success "@claude-flow/browser: integrated (59 MCP tools)"
-    info "  └─ Start MCP server with: cf-mcp"
 else
     warning "@claude-flow/browser: requires claude-flow init"
 fi
@@ -195,12 +196,17 @@ fi
 echo ""
 
 # ============================================================================
-# STEP 4: Initialize Memory
+# STEP 4: Initialize Memory System
 # ============================================================================
-info "Step 4: Initializing Claude Flow memory..."
+info "Step 4: Initializing Claude Flow memory system..."
 
-if [ -f "$HOME/.claude-flow/memory.db" ] || [ -f "$HOME/.claude-flow/data/memory.db" ]; then
-    warning "Memory already initialized - skipping"
+MEMORY_DIR="$WORKSPACE_FOLDER/.claude-flow/memory"
+
+if [ -d "$MEMORY_DIR" ] && [ -f "$MEMORY_DIR/agent.db" ]; then
+    success "Memory already initialized"
+    info "  └─ HNSW Vector Search: 150x-12,500x faster"
+    info "  └─ AgentDB: SQLite-based persistent memory"
+    info "  └─ LearningBridge: Bidirectional sync"
 else
     if npx -y claude-flow@alpha memory init --force 2>/dev/null; then
         success "Memory initialized with HNSW indexing"
@@ -234,85 +240,156 @@ echo ""
 info "Step 6: Checking MCP configuration..."
 
 MCP_CONFIG="$HOME/.config/claude/mcp.json"
+MCP_CONFIG_ALT="$HOME/.claude/claude_desktop_config.json"
+
 if [ -f "$MCP_CONFIG" ]; then
     grep -q "claude-flow" "$MCP_CONFIG" && success "MCP: claude-flow configured" || warning "MCP: claude-flow missing"
     grep -q "agentic-qe" "$MCP_CONFIG" && success "MCP: agentic-qe configured" || warning "MCP: agentic-qe missing"
     info "Restart Claude Code to detect MCP servers"
+elif [ -f "$MCP_CONFIG_ALT" ]; then
+    grep -q "claude-flow" "$MCP_CONFIG_ALT" && success "MCP: claude-flow configured" || warning "MCP: claude-flow missing"
 else
-    warning "MCP config not found at $MCP_CONFIG"
+    warning "MCP config not found"
 fi
 
 echo ""
 
 # ============================================================================
-# STEP 7: Verify Skills (ENHANCED - includes new skills)
+# STEP 7: Verify ALL Native Claude Flow Skills (38 total)
 # ============================================================================
-info "Step 7: Verifying Claude Code skills..."
+info "Step 7: Verifying ALL native Claude Flow skills..."
 
 SKILLS_DIR="$HOME/.claude/skills"
 SKILLS_DIR_LOCAL="$WORKSPACE_FOLDER/.claude/skills"
+SKILLS_INSTALLED=0
+SKILLS_MISSING=0
 
-section "Core Skills"
-for skill in agent-browser security-analyzer ui-ux-pro-max; do
-    if skill_has_content "$SKILLS_DIR/$skill" || skill_has_content "$SKILLS_DIR_LOCAL/$skill"; then
-        success "$skill skill installed"
+section "Core Skills (6)"
+for skill in sparc-methodology swarm-orchestration github-code-review agentdb-vector-search pair-programming hive-mind-advanced; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
     else
-        warning "$skill skill missing or empty"
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
     fi
 done
 
-section "Claude Flow Browser Integration"
-# @claude-flow/browser provides 59 MCP tools via claude-flow
-if [ -d "$WORKSPACE_FOLDER/.claude-flow" ]; then
-    success "Claude Flow Browser: integrated"
-    info "  └─ 59 MCP tools: browser/open, browser/snapshot, browser/click, etc."
-    info "  └─ Features: trajectory learning, security scanning, element refs (@e1, @e2)"
-    info "  └─ Memory: patterns saved to RuVector"
-    # Check if MCP is configured
-    if [ -f "$HOME/.config/claude/mcp.json" ] && grep -q "claude-flow" "$HOME/.config/claude/mcp.json" 2>/dev/null; then
-        success "  └─ MCP server configured"
+section "AgentDB Skills (4)"
+for skill in agentdb-advanced agentdb-learning agentdb-memory-patterns agentdb-optimization; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
     else
-        warning "  └─ MCP server not configured (run: claude mcp add claude-flow -- npx -y claude-flow@latest)"
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
     fi
+done
+
+section "GitHub Skills (4)"
+for skill in github-multi-repo github-project-management github-release-management github-workflow-automation; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
+    else
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
+    fi
+done
+
+section "V3 Development Skills (9)"
+for skill in v3-cli-modernization v3-core-implementation v3-ddd-architecture v3-integration-deep v3-mcp-optimization v3-memory-unification v3-performance-optimization v3-security-overhaul v3-swarm-coordination; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
+    else
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
+    fi
+done
+
+section "ReasoningBank Skills (2)"
+for skill in reasoningbank-agentdb reasoningbank-intelligence; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
+    else
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
+    fi
+done
+
+section "Flow Nexus Skills (3)"
+for skill in flow-nexus-neural flow-nexus-platform flow-nexus-swarm; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
+    else
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
+    fi
+done
+
+section "Additional Skills (8)"
+for skill in agentic-jujutsu hooks-automation performance-analysis skill-builder stream-chain swarm-advanced verification-quality dual-mode; do
+    if skill_is_installed "$skill"; then
+        success "$skill"
+        ((SKILLS_INSTALLED++))
+    else
+        warning "$skill - missing"
+        ((SKILLS_MISSING++))
+    fi
+done
+
+echo ""
+info "Skills Summary: $SKILLS_INSTALLED installed, $SKILLS_MISSING missing"
+echo ""
+
+# ============================================================================
+# STEP 8: Verify Custom Skills (Turbo Flow specific)
+# ============================================================================
+info "Step 8: Verifying custom Turbo Flow skills..."
+
+section "Security Analyzer"
+if skill_is_installed "security-analyzer"; then
+    success "security-analyzer skill installed"
 else
-    warning "Claude Flow Browser: requires cf-init"
+    warning "security-analyzer skill missing"
 fi
 
-section "New Skills (v3.1.0)"
-# Worktree Manager
+section "UI UX Pro Max"
+if skill_is_installed "ui-ux-pro-max" || skill_has_content "$SKILLS_DIR_LOCAL/ui-ux-pro-max"; then
+    success "UI UX Pro Max skill installed"
+else
+    warning "UI UX Pro Max skill missing"
+fi
+
+section "Worktree Manager"
 if [ -f "$SKILLS_DIR/worktree-manager/SKILL.md" ]; then
     success "worktree-manager skill installed"
-    # Check config
     if [ -f "$SKILLS_DIR/worktree-manager/config.json" ]; then
         success "  └─ config.json present"
     fi
-elif skill_has_content "$SKILLS_DIR/worktree-manager"; then
-    success "worktree-manager skill installed (minimal)"
 else
     warning "worktree-manager skill missing"
-    info "  └─ Install: git clone https://github.com/Wirasm/worktree-manager-skill.git ~/.claude/skills/worktree-manager"
 fi
 
-# Vercel Deploy
+section "Vercel Deploy"
 if [ -f "$SKILLS_DIR/vercel-deploy/SKILL.md" ]; then
     success "vercel-deploy skill installed"
-elif skill_has_content "$SKILLS_DIR/vercel-deploy"; then
-    success "vercel-deploy skill installed (partial)"
 else
     warning "vercel-deploy skill missing"
-    info "  └─ Install: npx skills add vercel-labs/agent-skills --skill vercel-deploy-claimable"
 fi
 
-# RuV Helpers (Visualization)
+section "RuV Helpers Visualization"
 if skill_has_content "$SKILLS_DIR/rUv_helpers"; then
     success "rUv_helpers installed"
-    # Check visualization component
     if [ -d "$SKILLS_DIR/rUv_helpers/claude-flow-ruvector-visualization" ]; then
         success "  └─ visualization dashboard present"
         if [ -d "$SKILLS_DIR/rUv_helpers/claude-flow-ruvector-visualization/node_modules" ]; then
             success "  └─ dependencies installed"
         else
-            warning "  └─ dependencies not installed (run: cd ~/.claude/skills/rUv_helpers/claude-flow-ruvector-visualization && npm install)"
+            warning "  └─ dependencies not installed"
         fi
     fi
 else
@@ -322,9 +399,32 @@ fi
 echo ""
 
 # ============================================================================
-# STEP 8: Verify Ultimate Cyberpunk Statusline (NEW)
+# STEP 9: Verify Claude Flow Browser Integration
 # ============================================================================
-info "Step 8: Checking Ultimate Cyberpunk Statusline (15 Components)..."
+info "Step 9: Verifying Claude Flow Browser integration..."
+
+if [ -d "$WORKSPACE_FOLDER/.claude-flow" ]; then
+    success "Claude Flow Browser: integrated"
+    info "  └─ 59 MCP tools: browser/open, browser/snapshot, browser/click, etc."
+    info "  └─ Features: trajectory learning, security scanning, element refs"
+    info "  └─ Memory: patterns saved to RuVector"
+    if [ -f "$HOME/.config/claude/mcp.json" ] && grep -q "claude-flow" "$HOME/.config/claude/mcp.json" 2>/dev/null; then
+        success "  └─ MCP server configured"
+    elif [ -f "$HOME/.claude/claude_desktop_config.json" ] && grep -q "claude-flow" "$HOME/.claude/claude_desktop_config.json" 2>/dev/null; then
+        success "  └─ MCP server configured"
+    else
+        warning "  └─ MCP server not configured"
+    fi
+else
+    warning "Claude Flow Browser: requires cf-init"
+fi
+
+echo ""
+
+# ============================================================================
+# STEP 10: Verify Ultimate Cyberpunk Statusline
+# ============================================================================
+info "Step 10: Checking Ultimate Cyberpunk Statusline (15 Components)..."
 
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 STATUSLINE_SCRIPT="$HOME/.claude/turbo-flow-statusline.sh"
@@ -341,16 +441,12 @@ if [ -f "$STATUSLINE_SCRIPT" ]; then
     fi
 else
     warning "Statusline script not found"
-    info "  └─ Run install-v3.1.0.sh to create"
 fi
 
 section "Settings Configuration"
 if [ -f "$CLAUDE_SETTINGS" ]; then
     if grep -q "turbo-flow-statusline" "$CLAUDE_SETTINGS" 2>/dev/null; then
         success "Statusline: configured in settings.json"
-    elif grep -q "statusline" "$CLAUDE_SETTINGS" 2>/dev/null; then
-        warning "Statusline: using different script"
-        info "  └─ Update to use: $STATUSLINE_SCRIPT"
     else
         warning "Statusline: not configured"
     fi
@@ -358,53 +454,24 @@ else
     warning "Claude settings.json not found"
 fi
 
-section "Cyberpunk Theme Config"
-if [ -f "$STATUSLINE_CONFIG" ]; then
-    success "Config file: ~/.claude/statusline-pro/config.toml"
-else
-    info "Config reference not found (script is self-contained)"
-fi
-
 section "Dependencies"
 if command -v jq &>/dev/null; then
     success "jq: $(jq --version 2>/dev/null || echo 'installed')"
 else
     warning "jq: not installed (needed for statusline)"
-    info "  └─ Install with: sudo apt install jq"
-fi
-
-if command -v ccusage &>/dev/null || npm list -g ccusage &>/dev/null 2>&1; then
-    success "ccusage: installed (cost tracking)"
-else
-    info "ccusage: not installed (optional, for enhanced cost tracking)"
-    info "  └─ Install with: npm install -g ccusage"
 fi
 
 section "15 Component Layout"
-echo ""
-info "  ╔═══════════════════════════════════════════════════════════════════════╗"
-info "  ║  LINE 1: Identity & Navigation                                        ║"
-info "  ║  📁 Project │ 🤖 Model │ 🌿 Branch │ 📟 Version │ 🎨 Style │ 🔗 Session║"
-info "  ╠═══════════════════════════════════════════════════════════════════════╣"
-info "  ║  LINE 2: Resources & Costs                                            ║"
-info "  ║  📊 Tokens │ 🧠 Context Bar │ 💾 Cache │ 💰 Cost │ 🔥 Burn │ ⏱️ Duration║"
-info "  ╠═══════════════════════════════════════════════════════════════════════╣"
-info "  ║  LINE 3: Activity & Status                                            ║"
-info "  ║  ➕ Added │ ➖ Removed │ 📂 Git │ 🌳 Worktree │ 🔌 MCP │ ✅ Status     ║"
-info "  ╚═══════════════════════════════════════════════════════════════════════╝"
-echo ""
-
-section "Color Palette"
-info "  Magenta (#FF00FF) • Cyan (#00FFFF) • Neon Green (#39FF14)"
-info "  Yellow (#FFE600) • Hot Pink (#FF1493) • Electric Blue (#0080FF)"
-info "  Neon Orange (#FFA500) • Neon Red (#FF3232)"
+info "  LINE 1: 📁 Project │ 🤖 Model │ 🌿 Branch │ 📟 Version │ 🎨 Style"
+info "  LINE 2: 📊 Tokens │ 🧠 Context │ 💾 Cache │ 💰 Cost │ 🔥 Burn │ ⏱️ Time"
+info "  LINE 3: ➕ Added │ ➖ Removed │ 📂 Git │ 🌳 Worktree │ 🔌 MCP │ ✅ Status"
 
 echo ""
 
 # ============================================================================
-# STEP 9: Verify Workspace Files
+# STEP 11: Verify Workspace Files
 # ============================================================================
-info "Step 9: Verifying workspace files..."
+info "Step 11: Verifying workspace files..."
 
 # Directories
 for dir in src tests docs scripts config plans; do
@@ -415,17 +482,14 @@ done
 [ -f "$WORKSPACE_FOLDER/AGENTS.md" ] && success "AGENTS.md exists" || warning "AGENTS.md missing"
 [ -f "$HOME/.claude/commands/prd2build.md" ] && success "prd2build command installed" || warning "prd2build missing"
 [ -d "$WORKSPACE_FOLDER/.claude-flow" ] && success ".claude-flow directory exists" || warning ".claude-flow missing"
-[ -f "$WORKSPACE_FOLDER/tsconfig.json" ] && success "tsconfig.json exists" || warning "tsconfig.json missing"
-[ -f "$WORKSPACE_FOLDER/tailwind.config.js" ] && success "tailwind.config.js exists" || warning "tailwind.config.js missing"
-[ -d "$WORKSPACE_FOLDER/node_modules/@heroui" ] && success "HeroUI installed" || warning "HeroUI missing"
 [ -f "$HOME/.codex/instructions.md" ] && success "Codex instructions exist" || warning "Codex instructions missing"
 
 echo ""
 
 # ============================================================================
-# STEP 10: Check External Tools
+# STEP 12: Check External Tools
 # ============================================================================
-info "Step 10: Checking external tools..."
+info "Step 12: Checking external tools..."
 
 # GitHub CLI
 if command -v gh >/dev/null 2>&1; then
@@ -441,7 +505,6 @@ fi
 # Codex
 if command -v codex >/dev/null 2>&1; then
     success "Codex: $(codex --version 2>/dev/null || echo 'installed')"
-    info "Run 'codex login' if not authenticated"
 else
     warning "Codex: not installed (optional)"
 fi
@@ -449,32 +512,63 @@ fi
 echo ""
 
 # ============================================================================
-# STEP 11: Check Environment (ENHANCED)
+# STEP 13: Check Bash Aliases (v3.3.0)
 # ============================================================================
-info "Step 11: Checking environment..."
+info "Step 13: Checking bash aliases..."
 
-# Bash aliases - check for new version
-if grep -q "TURBO FLOW v3.1.0" ~/.bashrc 2>/dev/null; then
-    success "Bash aliases: v3.1.0 installed"
-elif grep -q "TURBO FLOW v3.0.0" ~/.bashrc 2>/dev/null; then
-    warning "Bash aliases: v3.0.0 (upgrade to v3.1.0 by re-running setup.sh)"
+if grep -q "TURBO FLOW v3.3.0 COMPLETE" ~/.bashrc 2>/dev/null; then
+    success "Bash aliases: v3.3.0 installed"
+elif grep -q "TURBO FLOW v3.2.0" ~/.bashrc 2>/dev/null; then
+    warning "Bash aliases: v3.2.0 (upgrade to v3.3.0)"
+elif grep -q "TURBO FLOW v3.1.0" ~/.bashrc 2>/dev/null; then
+    warning "Bash aliases: v3.1.0 (upgrade to v3.3.0)"
 else
-    warning "Bash aliases: not found (run setup.sh or source ~/.bashrc)"
+    warning "Bash aliases: not found"
 fi
 
 section "Core Aliases"
-for alias in cf ruv ab aqe dsp; do
-    grep -q "alias $alias=" ~/.bashrc 2>/dev/null && success "Alias: $alias" || warning "Alias: $alias missing"
+for alias_name in cf ruv aqe dsp; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
 done
 
-section "Claude Flow Browser Aliases (NEW)"
-for alias in cfb-open cfb-snap cfb-click cfb-trajectory cfb-learn; do
-    grep -q "alias $alias=" ~/.bashrc 2>/dev/null && success "Alias: $alias" || warning "Alias: $alias missing"
+section "Native Skill Aliases"
+for alias_name in cf-sparc cf-swarm-skill cf-hive cf-pair cf-gh-review cf-agentdb-search; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
 done
 
-section "New Aliases (v3.1.0)"
-for alias in ruv-viz wt-status wt-clean deploy deploy-preview; do
-    grep -q "alias $alias=" ~/.bashrc 2>/dev/null && success "Alias: $alias" || warning "Alias: $alias missing"
+section "AgentDB Aliases"
+for alias_name in cf-agentdb-advanced cf-agentdb-learning cf-agentdb-memory cf-agentdb-opt; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
+done
+
+section "GitHub Aliases"
+for alias_name in cf-gh-multi cf-gh-project cf-gh-release cf-gh-workflow; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
+done
+
+section "V3 Development Aliases"
+for alias_name in cf-v3-cli cf-v3-core cf-v3-ddd cf-v3-perf cf-v3-security; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
+done
+
+section "Utility Aliases"
+for alias_name in cf-hooks cf-perf-analyze cf-verify cf-skill-build cf-stream; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
+done
+
+section "Memory & Neural Aliases"
+for alias_name in mem-search mem-vsearch mem-stats neural-train neural-patterns; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
+done
+
+section "Browser Aliases"
+for alias_name in cfb-open cfb-snap cfb-click cfb-trajectory cfb-learn; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
+done
+
+section "Workflow Aliases"
+for alias_name in ruv-viz wt-status wt-create deploy deploy-preview; do
+    grep -q "alias $alias_name=" ~/.bashrc 2>/dev/null && success "Alias: $alias_name" || warning "Alias: $alias_name missing"
 done
 
 section "Functions"
@@ -482,11 +576,17 @@ for func in turbo-status turbo-help; do
     grep -q "${func}()" ~/.bashrc 2>/dev/null && success "Function: $func()" || warning "Function: $func() missing"
 done
 
-section "Environment Variables"
-# API key
+echo ""
+
+# ============================================================================
+# STEP 14: Check Environment
+# ============================================================================
+info "Step 14: Checking environment..."
+
+section "API Keys"
 [ -n "$ANTHROPIC_API_KEY" ] && success "ANTHROPIC_API_KEY is set" || warning "ANTHROPIC_API_KEY not set"
 
-# PATH
+section "PATH"
 echo "$PATH" | grep -q "$HOME/.local/bin" && success "PATH: ~/.local/bin" || warning "PATH missing ~/.local/bin"
 echo "$PATH" | grep -q "$HOME/.cargo/bin" && success "PATH: ~/.cargo/bin" || warning "PATH missing ~/.cargo/bin"
 echo "$PATH" | grep -q "$HOME/.claude/bin" && success "PATH: ~/.claude/bin" || warning "PATH missing ~/.claude/bin"
@@ -494,9 +594,9 @@ echo "$PATH" | grep -q "$HOME/.claude/bin" && success "PATH: ~/.claude/bin" || w
 echo ""
 
 # ============================================================================
-# STEP 12: Run Doctor
+# STEP 15: Run Doctor
 # ============================================================================
-info "Step 12: Running Claude Flow doctor..."
+info "Step 15: Running Claude Flow doctor..."
 
 DOCTOR_OUTPUT=$(npx -y claude-flow@alpha doctor 2>&1 || true)
 if echo "$DOCTOR_OUTPUT" | grep -qi "error\|failed\|missing"; then
@@ -510,30 +610,20 @@ fi
 echo ""
 
 # ============================================================================
-# STEP 13: Test New Components (NEW)
+# STEP 16: Test Components
 # ============================================================================
-info "Step 13: Testing new v3.1.0 components..."
+info "Step 16: Testing v3.3.0 components..."
 
-section "Claude Flow Browser (59 MCP Tools)"
-if [ -d "$WORKSPACE_FOLDER/.claude-flow" ]; then
-    success "Claude Flow initialized"
-    # Check MCP configuration
-    if npx -y claude-flow@alpha mcp status 2>/dev/null | grep -q "running\|active"; then
-        success "MCP server running"
-        info "  └─ Browser tools available: browser/open, browser/snapshot, etc."
-    else
-        info "MCP server not running"
-        info "  └─ Start with: cf-mcp"
-    fi
-    info "  └─ CLI aliases: ab-open, ab-snap, ab-click, ab-fill"
-    info "  └─ MCP aliases: cfb-open, cfb-snap, cfb-trajectory, cfb-learn"
+section "Claude Flow MCP Server"
+if npx -y claude-flow@alpha mcp status 2>/dev/null | grep -q "running\|active"; then
+    success "MCP server running"
 else
-    warning "Claude Flow not initialized - run cf-init"
+    info "MCP server not running - start with: cf-mcp"
 fi
 
 section "RuVector Visualization"
 if [ -f "$HOME/.claude/skills/rUv_helpers/claude-flow-ruvector-visualization/server.js" ]; then
-    success "Visualization server script found"
+    success "Visualization server ready"
     info "  └─ Start with: ruv-viz (opens http://localhost:3333)"
 else
     warning "Visualization server not found"
@@ -542,11 +632,7 @@ fi
 section "Worktree Manager"
 if [ -f "$HOME/.claude/skills/worktree-manager/SKILL.md" ]; then
     success "Worktree manager skill ready"
-    # Check worktree base directory config
-    if [ -f "$HOME/.claude/skills/worktree-manager/config.json" ]; then
-        WORKTREE_BASE=$(grep -o '"worktreeBase"[[:space:]]*:[[:space:]]*"[^"]*"' "$HOME/.claude/skills/worktree-manager/config.json" 2>/dev/null | cut -d'"' -f4 || echo "~/tmp/worktrees")
-        info "  └─ Worktree base: $WORKTREE_BASE"
-    fi
+    info "  └─ Aliases: wt-status, wt-clean, wt-create"
 else
     warning "Worktree manager skill not found"
 fi
@@ -554,21 +640,29 @@ fi
 section "Vercel Deploy"
 if [ -f "$HOME/.claude/skills/vercel-deploy/SKILL.md" ]; then
     success "Vercel deploy skill ready"
-    info "  └─ Usage: 'Deploy my app' or 'Deploy and give me the preview URL'"
+    info "  └─ Aliases: deploy, deploy-preview"
 else
     warning "Vercel deploy skill not found"
+fi
+
+section "Memory System"
+if [ -d "$WORKSPACE_FOLDER/.claude-flow/memory" ]; then
+    success "Memory system initialized"
+    info "  └─ Aliases: mem-search, mem-vsearch, mem-stats"
+else
+    warning "Memory system not initialized"
 fi
 
 echo ""
 
 # ============================================================================
-# STEP 14: Generate Prompts (ENHANCED)
+# STEP 17: Generate Prompts
 # ============================================================================
-info "Step 14: Generating Claude prompts..."
+info "Step 17: Generating Claude prompts..."
 
 PROMPT_FILE="$WORKSPACE_FOLDER/.claude-flow-prompts.md"
 cat > "$PROMPT_FILE" << 'PROMPT_EOF'
-# Claude Post-Setup Prompts (v3.1.0)
+# Claude Post-Setup Prompts (v3.3.0)
 
 ## Quick Verification
 ```
@@ -577,7 +671,7 @@ Run turbo-status to check all installed components.
 
 ## Restart MCP
 ```
-Restart the MCP server connection to detect claude-flow and agentic-qe.
+Restart the MCP server connection to detect claude-flow.
 ```
 
 ## Full Doctor Check
@@ -585,69 +679,173 @@ Restart the MCP server connection to detect claude-flow and agentic-qe.
 Run Claude Flow doctor and show complete status.
 ```
 
-## Test Swarm
+---
+
+## Core Skills Prompts
+
+### SPARC Methodology
 ```
-Spawn a test agent to verify swarm is working.
+Use SPARC methodology to plan a new feature for this codebase.
 ```
 
-## Test RuVector
+### Swarm Orchestration
 ```
-Run ruv-stats to check learning statistics.
-```
-
-## Test Agent Browser
-```
-Open https://example.com with agent-browser and take a snapshot.
+Initialize a swarm with hierarchical topology to analyze this project.
 ```
 
-## Test Claude Flow Browser (MCP)
+### Hive Mind
 ```
-Start the Claude Flow MCP server and use browser/open to navigate to https://example.com, then take a snapshot with browser/snapshot.
-```
-
-## Start Trajectory Learning
-```
-Start a browser trajectory to learn the login flow pattern.
+Use hive-mind to coordinate multiple agents for a complex refactoring task.
 ```
 
-## Generate Tests
+### Pair Programming
 ```
-Use agentic-qe to generate tests for this codebase.
+Start a pair programming session to implement user authentication.
 ```
 
 ---
 
-## NEW v3.1.0 Prompts
+## AgentDB Prompts
 
-### Start Visualization Dashboard
+### Vector Search
 ```
-Start the RuVector visualization dashboard at localhost:3333.
-```
-
-### Create Parallel Worktree
-```
-Create a worktree for feature/my-new-feature so I can work on it in parallel.
+Use agentdb-vector-search to find similar code patterns in the codebase.
 ```
 
-### Check Worktree Status
+### Learning
 ```
-What is the status of my worktrees?
+Train an agent using agentdb-learning with Q-Learning algorithm.
+```
+
+### Memory Patterns
+```
+Store the current session context using agentdb-memory-patterns.
+```
+
+### Optimization
+```
+Optimize memory usage with agentdb-optimization quantization.
+```
+
+---
+
+## GitHub Prompts
+
+### Code Review
+```
+Review the last PR using github-code-review skill.
+```
+
+### Multi-Repo
+```
+Coordinate changes across multiple repositories.
+```
+
+### Project Management
+```
+Create a sprint plan using github-project-management.
+```
+
+### Release
+```
+Prepare a release using github-release-management.
+```
+
+---
+
+## V3 Development Prompts
+
+### DDD Architecture
+```
+Analyze the current architecture and suggest DDD improvements.
+```
+
+### Performance Optimization
+```
+Identify performance bottlenecks and suggest optimizations.
+```
+
+### Security Overhaul
+```
+Run a security audit on this codebase.
+```
+
+---
+
+## ReasoningBank Prompts
+
+### Adaptive Learning
+```
+Use reasoningbank to learn from recent successful patterns.
+```
+
+### Pattern Recognition
+```
+Identify recurring patterns in the codebase using reasoningbank-intelligence.
+```
+
+---
+
+## Flow Nexus Prompts
+
+### Neural Training
+```
+Train a neural network model for code prediction.
+```
+
+### Cloud Deployment
+```
+Deploy this application using flow-nexus-platform.
+```
+
+---
+
+## Utility Prompts
+
+### Hooks Automation
+```
+Set up hooks for automatic code formatting before commits.
+```
+
+### Performance Analysis
+```
+Analyze system performance and generate a report.
+```
+
+### Verification
+```
+Run verification-quality checks on recent changes.
+```
+
+### Skill Builder
+```
+Create a new custom skill for this project's specific needs.
+```
+
+---
+
+## Workflow Prompts
+
+### Create Worktree
+```
+Create a worktree for feature/new-api-endpoint.
 ```
 
 ### Deploy to Vercel
 ```
-Deploy this app to Vercel and give me the preview URL.
+Deploy this app to Vercel and show the preview URL.
 ```
 
-### Quick Deploy
+### Start Visualization
 ```
-Deploy my app.
+Start the RuVector visualization dashboard.
 ```
 
-### Statusline Configuration
+### Memory Operations
 ```
-Show me how to customize my Claude Code statusline.
+Search memory for patterns related to authentication.
 ```
+
 PROMPT_EOF
 
 success "Prompts saved to: $PROMPT_FILE"
@@ -655,7 +853,7 @@ success "Prompts saved to: $PROMPT_FILE"
 echo ""
 
 # ============================================================================
-# FINAL: Fix Permissions (CRITICAL)
+# FINAL: Fix Permissions
 # ============================================================================
 section "Final Permission Fix"
 info "Fixing permissions..."
@@ -673,40 +871,37 @@ success "Permissions fixed"
 echo ""
 
 # ============================================================================
-# SUMMARY (ENHANCED)
+# SUMMARY
 # ============================================================================
 cat << 'EOF'
 ╔══════════════════════════════════════════════════════════════════╗
-║                 Post-Setup Complete! (v3.1.0)                    ║
+║                 Post-Setup Complete! (v3.3.0)                    ║
 ╚══════════════════════════════════════════════════════════════════╝
 
 Components Verified:
 
   CORE:
   • Node.js 20+, Claude Code, Claude Flow V3, RuVector
-  • jq (for worktree-manager)
+  • jq, sql.js (memory database)
 
-  ECOSYSTEM:
-  • agentic-qe, openspec, uipro-cli, agent-browser, uv, specify
+  NATIVE SKILLS (36 installed):
+  • Core (6): sparc, swarm, hive, pair-prog, github-review, agentdb-search
+  • AgentDB (4): advanced, learning, memory-patterns, optimization
+  • GitHub (4): multi-repo, project-mgmt, release, workflow
+  • V3 Dev (9): cli, core, ddd, integration, mcp, memory, perf, security, swarm
+  • ReasoningBank (2): agentdb, intelligence
+  • Flow Nexus (3): neural, platform, swarm
+  • Additional (8): jujutsu, hooks, perf-analysis, skill-builder, stream, swarm-adv, verify, dual
 
-  BROWSER AUTOMATION:
-  • agent-browser CLI (ab-open, ab-snap, ab-click, ab-fill)
-  • @claude-flow/browser (59 MCP tools, trajectory learning, security)
-
-  SKILLS (Original):
-  • agent-browser, security-analyzer, UI UX Pro Max
-
-  SKILLS (NEW in v3.1.0):
-  • worktree-manager   - Parallel development with git worktrees
-  • vercel-deploy      - One-command Vercel deployment
-  • rUv_helpers        - 3D visualization dashboard
+  CUSTOM SKILLS:
+  • security-analyzer, ui-ux-pro-max, worktree-manager, vercel-deploy, rUv_helpers
 
   WORKSPACE:
-  • src, tests, docs, scripts, config, plans, HeroUI
+  • src, tests, docs, scripts, config, plans
 
   CONFIG:
   • AGENTS.md, prd2build, Codex, MCP servers
-  • Statusline Pro (NEW)
+  • Statusline Pro (15 components)
 
 Next Steps:
 
@@ -717,19 +912,17 @@ Next Steps:
 
 Quick Reference:
 
-  CLAUDE FLOW     cf, cf-init, cf-wizard, cf-swarm, cf-doctor
-  RUVECTOR        ruv, ruv-stats, ruv-route, ruv-recall
-  
-  BROWSER (CLI)   ab-open, ab-snap, ab-click, ab-fill
-  BROWSER (MCP)   cfb-open, cfb-snap, cfb-trajectory, cfb-learn
-  
-  TESTING         aqe-generate, aqe-gate
-  STATUS          turbo-status, turbo-help
-
-  NEW in v3.1.0:
-  VISUALIZATION   ruv-viz, ruv-viz-stop
-  WORKTREE        wt-status, wt-clean, wt-create
-  DEPLOYMENT      deploy, deploy-preview
+  CORE SKILLS     cf-sparc, cf-swarm-skill, cf-hive, cf-pair
+  AGENTDB         cf-agentdb-search, cf-agentdb-learning, cf-agentdb-memory
+  GITHUB          cf-gh-review, cf-gh-multi, cf-gh-project, cf-gh-release
+  V3 DEV          cf-v3-cli, cf-v3-core, cf-v3-ddd, cf-v3-perf, cf-v3-security
+  REASONING       cf-reasoning-db, cf-reasoning-intel
+  FLOW NEXUS      cf-flow-neural, cf-flow-platform, cf-flow-swarm
+  UTILITIES       cf-hooks, cf-perf-analyze, cf-verify, cf-skill-build
+  MEMORY          mem-search, mem-vsearch, mem-stats
+  NEURAL          neural-train, neural-patterns, neural-predict
+  BROWSER         cfb-open, cfb-snap, cfb-click, cfb-trajectory
+  WORKFLOW        ruv-viz, wt-status, wt-create, deploy
 
 EOF
 
