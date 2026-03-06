@@ -20,8 +20,8 @@
         "vscode": {
             "extensions": [
                 "rooveterinaryinc.roo-cline",
-                "vsls-contrib.gistfs",
-                
+                "vsls-contrib.gistfs"
+            ],
             "settings": {
                 "terminal.integrated.cwd": "${containerWorkspaceFolder}",
                 "terminal.integrated.shellIntegration.enabled": true,
@@ -29,7 +29,10 @@
                 "terminal.integrated.profiles.linux": {
                     "tmux-workspace": {
                         "path": "/bin/bash",
-                        "args": ["-c", "tmux attach-session -t workspace 2>/dev/null || bash"]
+                        "args": [
+                            "-c",
+                            "tmux attach-session -t workspace 2>/dev/null || bash"
+                        ]
                     }
                 },
                 "terminal.integrated.defaultProfile.linux": "tmux-workspace"
