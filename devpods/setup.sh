@@ -124,7 +124,7 @@ else
 fi
 
 # Ruflo (THE orchestration layer)
-npx ruflo@latest init --wizard 2>/dev/null || npx ruflo@latest init >> "$LOG" 2>&1
+npx ruflo@latest init >> "$LOG" 2>&1 || true
 ok "Ruflo v3.5 initialized (includes RuVector, AgentDB, SONA, skills, browser, observability)"
 
 # Register Ruflo as MCP server for Claude Code
