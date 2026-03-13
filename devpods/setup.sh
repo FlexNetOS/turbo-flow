@@ -201,12 +201,21 @@ install_plugin() {
         return 0
     fi
 
-    if npx ruflo@latest plugins install -n "$plugin_name" >> "$LOG" 2>&1; then
+    # FIX: Cap Node heap during plugin installs to avoid OOM in constrained containers
+    local PLUGIN_OK=0
+    (
+        export NODE_OPTIONS="--max-old-space-size=512"
+        if npx ruflo@latest plugins install -n "$plugin_name" >> "$LOG" 2>&1; then
+            exit 0
+        elif npx ruflo@latest plugins install --name "$plugin_name" >> "$LOG" 2>&1; then
+            exit 0
+        else
+            exit 1
+        fi
+    ) && PLUGIN_OK=1 || true
+
+    if [ "$PLUGIN_OK" -eq 1 ]; then
         ok "$plugin_name installed"
-        PLUGINS_INSTALLED=$((PLUGINS_INSTALLED + 1))
-        return 0
-    elif npx ruflo@latest plugins install --name "$plugin_name" >> "$LOG" 2>&1; then
-        ok "$plugin_name installed (--name flag)"
         PLUGINS_INSTALLED=$((PLUGINS_INSTALLED + 1))
         return 0
     else
@@ -240,6 +249,9 @@ npm install -g @fission-ai/openspec >> "$LOG" 2>&1 \
 
 ok "Plugins + tools installed: $PLUGINS_INSTALLED/6 plugins + OpenSpec"
 ok "Elapsed: $(elapsed)"
+
+# Free memory between heavy install phases
+npm cache clean --force >> "$LOG" 2>&1 || true
 
 # =============================================================================
 # STEP 4: UI UX Pro Max Skill
@@ -277,54 +289,75 @@ ok "Elapsed: $(elapsed)"
 # STEP 5: GitNexus — Codebase Knowledge Graph
 # Indexes repos into knowledge graph (dependencies, call chains, execution flows)
 # Agents get blast-radius detection before making changes
+#
+# FIX: npm install -g gitnexus was OOM-killed (exit 137) in memory-constrained
+# DevPod containers. Now: (a) cap Node heap to 512MB, (b) run install in a
+# subshell so OOM only kills the child, (c) gc npm cache between heavy installs,
+# (d) anything that fails or is too heavy gets picked up automatically by a
+# post-setup background bootstrap — zero manual steps.
 # =============================================================================
 step 5 "GitNexus (Codebase Knowledge Graph)"
 
+# Free memory before heavy install — previous steps may have left npm caches
+npm cache clean --force >> "$LOG" 2>&1 || true
+
+# Track whether post-setup bootstrap is needed
+NEEDS_BOOTSTRAP=0
+
 if ! command -v gitnexus &>/dev/null; then
-    npm install -g gitnexus >> "$LOG" 2>&1 \
-        && ok "GitNexus installed globally" \
-        || {
-            npx gitnexus --version >> "$LOG" 2>&1 \
-                && ok "GitNexus available via npx" \
-                || warn "GitNexus install failed — install manually: npm i -g gitnexus"
-        }
+    GNX_OK=0
+    (
+        export NODE_OPTIONS="--max-old-space-size=512"
+        npm install -g gitnexus >> "$LOG" 2>&1
+    ) && GNX_OK=1 || true
+
+    if [ "$GNX_OK" -eq 1 ] && command -v gitnexus &>/dev/null; then
+        ok "GitNexus installed globally"
+    else
+        warn "GitNexus install deferred to post-setup bootstrap (memory-constrained)"
+        NEEDS_BOOTSTRAP=1
+    fi
 else
     ok "GitNexus already present"
 fi
 
-# Index the workspace if it's a git repo
-if [ -d "$WORKSPACE/.git" ]; then
-    (cd "$WORKSPACE" && npx gitnexus analyze >> "$LOG" 2>&1) \
-        && ok "GitNexus indexed workspace" \
-        || warn "GitNexus indexing skipped (run manually: npx gitnexus analyze)"
-fi
+# Indexing always deferred to bootstrap (runs in background after setup exits
+# and all npm install memory is freed)
+ok "GitNexus indexing scheduled for post-setup bootstrap"
 
 ok "Elapsed: $(elapsed)"
 
 # =============================================================================
 # STEP 6: Beads — Cross-Session Project Memory (NEW in 4.0)
 # Agents remember across sessions via git-native JSONL.
+# FIX: Same OOM protection as GitNexus — subshell + capped heap.
 # =============================================================================
 step 6 "Beads (Cross-Session Memory)"
 
 if ! command -v bd &>/dev/null; then
-    npm install -g beads-cli >> "$LOG" 2>&1 \
-        && ok "Beads installed" \
-        || {
-            pip install --user beads >> "$LOG" 2>&1 \
-                && ok "Beads installed (pip)" \
-                || warn "Beads install failed — install manually: npm i -g beads-cli"
-        }
+    BD_OK=0
+    (
+        export NODE_OPTIONS="--max-old-space-size=512"
+        npm install -g beads-cli >> "$LOG" 2>&1
+    ) && BD_OK=1 || true
+
+    if [ "$BD_OK" -eq 1 ] && command -v bd &>/dev/null; then
+        ok "Beads installed"
+    else
+        # Try pip as lighter-weight fallback
+        if pip install --user beads >> "$LOG" 2>&1 && command -v bd &>/dev/null; then
+            ok "Beads installed (pip)"
+        else
+            warn "Beads install deferred to post-setup bootstrap (memory-constrained)"
+            NEEDS_BOOTSTRAP=1
+        fi
+    fi
 else
     ok "Beads already present"
 fi
 
-# Initialize beads in workspace if it's a git repo
-if [ -d "$WORKSPACE/.git" ]; then
-    (cd "$WORKSPACE" && bd init >> "$LOG" 2>&1) \
-        && ok "Beads initialized in workspace" \
-        || warn "Beads init skipped (run manually: bd init)"
-fi
+# Beads init deferred to bootstrap (needs all memory freed first)
+ok "Beads workspace init scheduled for post-setup bootstrap"
 
 ok "Elapsed: $(elapsed)"
 
@@ -794,6 +827,130 @@ rm -rf /tmp/npm-* /tmp/nvm-* 2>/dev/null || true
 ok "Elapsed: $(elapsed)"
 
 # =============================================================================
+# POST-SETUP BOOTSTRAP — runs in background after setup exits
+#
+# This handles everything too heavy to run during setup (OOM risk):
+#   1. Retry any failed installs (GitNexus, Beads) now that npm caches are freed
+#   2. Run gitnexus analyze on the workspace
+#   3. Run bd init in the workspace
+#   4. Register GitNexus MCP if install was deferred
+#   5. Self-deletes the one-shot shell hook after completion
+#
+# Two triggers ensure it runs automatically:
+#   A. Immediately: nohup background process launched at end of setup
+#   B. Shell login fallback: one-shot hook in .bashrc/.zshrc (in case A is
+#      killed when the DevPod container restarts after setup)
+# =============================================================================
+
+BOOTSTRAP_SCRIPT="$HOME/.turboflow-bootstrap.sh"
+BOOTSTRAP_LOG="/tmp/turboflow-bootstrap.log"
+BOOTSTRAP_LOCK="/tmp/turboflow-bootstrap.lock"
+BOOTSTRAP_DONE="$HOME/.turboflow-bootstrap-done"
+
+cat > "$BOOTSTRAP_SCRIPT" << BOOTSTRAPEOF
+#!/bin/bash
+# TurboFlow 4.0 — Post-Setup Bootstrap (auto-runs once, then self-removes)
+# This script completes deferred work that was too memory-heavy for setup.
+
+set -uo pipefail
+
+BSLOG="$BOOTSTRAP_LOG"
+LOCK="$BOOTSTRAP_LOCK"
+DONE_FLAG="$BOOTSTRAP_DONE"
+WORKSPACE="$WORKSPACE"
+
+# Already completed
+[ -f "\$DONE_FLAG" ] && exit 0
+
+# Prevent concurrent runs
+if [ -f "\$LOCK" ]; then
+    LOCK_PID=\$(cat "\$LOCK" 2>/dev/null)
+    if [ -n "\$LOCK_PID" ] && kill -0 "\$LOCK_PID" 2>/dev/null; then
+        exit 0  # Another instance is running
+    fi
+fi
+echo \$\$ > "\$LOCK"
+trap 'rm -f "\$LOCK"' EXIT
+
+echo "[\$(date)] Bootstrap starting" >> "\$BSLOG"
+
+# Cap all Node operations to 512MB
+export NODE_OPTIONS="--max-old-space-size=512"
+
+# --- 1. Retry GitNexus install if missing ---
+if ! command -v gitnexus &>/dev/null; then
+    echo "[\$(date)] Installing GitNexus..." >> "\$BSLOG"
+    npm install -g gitnexus >> "\$BSLOG" 2>&1 || true
+fi
+
+# --- 2. Retry Beads install if missing ---
+if ! command -v bd &>/dev/null; then
+    echo "[\$(date)] Installing Beads..." >> "\$BSLOG"
+    npm install -g beads-cli >> "\$BSLOG" 2>&1 || true
+fi
+if ! command -v bd &>/dev/null; then
+    pip install --user beads >> "\$BSLOG" 2>&1 || true
+fi
+
+# --- 3. Initialize Beads in workspace ---
+if command -v bd &>/dev/null && [ -d "\$WORKSPACE/.git" ]; then
+    if [ ! -d "\$WORKSPACE/.beads" ]; then
+        echo "[\$(date)] Initializing Beads in workspace..." >> "\$BSLOG"
+        (cd "\$WORKSPACE" && bd init >> "\$BSLOG" 2>&1) || true
+    fi
+fi
+
+# --- 4. Index workspace with GitNexus ---
+if [ -d "\$WORKSPACE/.git" ]; then
+    if command -v gitnexus &>/dev/null; then
+        echo "[\$(date)] Indexing workspace with GitNexus..." >> "\$BSLOG"
+        (cd "\$WORKSPACE" && gitnexus analyze >> "\$BSLOG" 2>&1) || true
+    else
+        # Fallback to npx with tight memory
+        echo "[\$(date)] Indexing workspace with GitNexus (npx)..." >> "\$BSLOG"
+        (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
+    fi
+fi
+
+# --- 5. Register GitNexus MCP if not already done ---
+if command -v gitnexus &>/dev/null || npx gitnexus --version >> "\$BSLOG" 2>&1; then
+    npx gitnexus setup >> "\$BSLOG" 2>&1 \
+        || claude mcp add gitnexus -- npx -y gitnexus mcp >> "\$BSLOG" 2>&1 \
+        || true
+fi
+
+# --- Done — mark complete and remove shell hooks ---
+touch "\$DONE_FLAG"
+echo "[\$(date)] Bootstrap complete" >> "\$BSLOG"
+
+# Remove the one-shot hook from shell rc files
+for rc in "\$HOME/.bashrc" "\$HOME/.zshrc"; do
+    [ -f "\$rc" ] && sed -i '/turboflow-bootstrap/d' "\$rc" 2>/dev/null || true
+done
+
+rm -f "\$LOCK"
+BOOTSTRAPEOF
+
+chmod +x "$BOOTSTRAP_SCRIPT"
+
+# --- Trigger A: Launch immediately in background ---
+# The nohup + disown ensures it survives after setup.sh exits.
+# Sleep 5s to let setup finish and free all memory first.
+(sleep 5 && nohup "$BOOTSTRAP_SCRIPT" >> "$BOOTSTRAP_LOG" 2>&1 &) &
+disown 2>/dev/null || true
+ok "Post-setup bootstrap launched (background, 5s delay)"
+
+# --- Trigger B: One-shot shell hook (fallback if background process is killed) ---
+BOOTSTRAP_HOOK="[ ! -f \"$BOOTSTRAP_DONE\" ] && [ -x \"$BOOTSTRAP_SCRIPT\" ] && (nohup \"$BOOTSTRAP_SCRIPT\" >> \"$BOOTSTRAP_LOG\" 2>&1 &)"
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$rc" ]; then
+        grep -q 'turboflow-bootstrap' "$rc" 2>/dev/null || \
+            echo "$BOOTSTRAP_HOOK  # turboflow-bootstrap one-shot" >> "$rc"
+    fi
+done
+ok "Bootstrap shell hook installed (auto-removes after completion)"
+
+# =============================================================================
 # DONE
 # =============================================================================
 END_TIME=$(date +%s)
@@ -806,16 +963,15 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  ${BOLD}Summary:${NC}"
 echo -e "    Core:    Claude Code + Ruflo v3.5 (215 MCP tools, 60+ agents)"
-echo -e "    Plugins: 6 (agentic-qe, code-intel, test-intel, perf, teammate, gastown)"
+echo -e "    Plugins: $PLUGINS_INSTALLED/6 (agentic-qe, code-intel, test-intel, perf, teammate, gastown)"
 echo -e "    Memory:  Beads + Native Tasks + AgentDB (3-tier)"
 echo -e "    Graph:   GitNexus codebase knowledge graph"
 echo -e "    Time:    ${TOTAL_TIME}s"
+if [ "$NEEDS_BOOTSTRAP" -eq 1 ]; then
+echo -e "    ${YELLOW}Bootstrap:${NC} finishing deferred installs in background (~30-60s)"
+fi
 echo ""
-echo -e "  ${BOLD}Next steps:${NC}"
-echo -e "    1. ${CYAN}source ~/.bashrc${NC}     (or ~/.zshrc)"
-echo -e "    2. ${CYAN}turbo-status${NC}         (verify everything)"
-echo -e "    3. ${CYAN}rf-wizard${NC}            (interactive ruflo setup)"
-echo -e "    4. ${CYAN}claude${NC}               (start coding)"
+echo -e "  ${BOLD}Next:${NC} ${CYAN}claude${NC}  (everything else is automatic)"
 echo ""
 echo -e "  ${BOLD}Changed from v3.4.1:${NC}"
 echo -e "    • claude-flow@alpha → ${GREEN}ruflo@latest${NC} (rf-* aliases)"
@@ -826,5 +982,5 @@ echo -e "    • No codebase awareness → ${GREEN}GitNexus${NC} (gnx-* aliases)
 echo -e "    • Manual worktree skill → ${GREEN}native wt-* helpers${NC}"
 echo -e "    • 4 separate core installs → ${GREEN}1 ruflo init${NC}"
 echo ""
-echo -e "  ${BOLD}Full log:${NC} $LOG"
+echo -e "  ${BOLD}Logs:${NC} setup=$LOG  bootstrap=$BOOTSTRAP_LOG"
 echo ""
