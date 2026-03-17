@@ -19,8 +19,7 @@
 | `rf-doctor` | `npx ruflo@latest doctor --fix` |
 | `rf-init` | `npx ruflo@latest init` |
 | `rf-plugins` | `npx ruflo@latest plugins list --installed` |
-| `ruv-remember K V` | `npx ruflo@latest memory store --key "K" --value "V"` |
-| `ruv-recall Q` | `npx ruflo@latest memory search --query "Q"` |
+| `mem-store K V` | `npx ruflo@latest memory store --key "K" --value "V"` |
 | `mem-search Q` | `npx ruflo@latest memory search --query "Q"` |
 | `mem-stats` | `npx ruflo@latest memory stats` |
 | `bd-ready` | `bd ready --json` |
@@ -33,8 +32,8 @@
 | `gnx-analyze` | `npx gitnexus analyze` |
 | `gnx-serve` | `npx gitnexus serve` |
 | `gnx-wiki` | `npx gitnexus wiki` |
-| `aqe-generate` | `npx @agentic-qe/v3 generate` (or via MCP) |
-| `aqe-gate` | `npx @agentic-qe/v3 gate` (or via MCP) |
+| `aqe-generate` | `npx ruflo@latest mcp call aqe/generate-tests` |
+| `aqe-gate` | `npx ruflo@latest mcp call aqe/evaluate-quality-gate` |
 | `os-init` | `openspec init` |
 | `os` | `openspec` |
 | `hooks-train` | `npx ruflo@latest hooks pretrain` |
@@ -568,8 +567,8 @@ Store these development patterns in AgentDB for future reference:
 - Pattern: "[name]" → "[details]"
 - Pattern: "[name]" → "[details]"
 
-Use ruv-remember for each. Tag by domain.
-Later I'll use ruv-recall and mem-search to retrieve them.
+Use mem-store for each. Tag by domain.
+Later I'll use mem-search to retrieve them.
 ```
 
 ### 11.2 — Semantic Code Search
@@ -800,7 +799,7 @@ Add a new [GET/POST/PUT/DELETE] endpoint for [resource]:
    - Implement: controller, service, repository layers
    - Review: security, error handling, rate limiting
 4. Update OpenAPI spec
-5. Record the pattern: ruv-remember "api-[resource]" "[pattern details]"
+5. Record the pattern: mem-store "api-[resource]" "[pattern details]"
 ```
 
 ### 16.4 — Add Database Migration
