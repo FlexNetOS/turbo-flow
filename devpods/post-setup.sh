@@ -268,6 +268,14 @@ fi
 # =============================================================================
 section "Step 7: Beads (Cross-Session Memory)"
 
+if command -v dolt >/dev/null 2>&1; then
+    success "Dolt $(dolt version 2>/dev/null) installed (Beads database backend)"
+    ((PASS++))
+else
+    warning "Dolt not installed — Beads requires Dolt. Install from https://docs.dolthub.com"
+    ((ISSUES++))
+fi
+
 if command -v bd >/dev/null 2>&1; then
     success "Beads CLI installed"
     ((PASS++))
