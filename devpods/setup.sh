@@ -172,11 +172,7 @@ fi
 # ── FIX 2 + FIX 12: MCP registration — fully guarded, timeout added to prevent
 # auth-prompt hang on claude mcp add ──
 claude mcp remove claude-flow 2>/dev/null || true
-# Register at user scope so it persists across all workspaces
-timeout 30 claude mcp add ruflo --scope user -- npx -y ruflo@latest 2>/dev/null     && ok "Ruflo MCP server registered (user scope)"     || {
-        # Fallback: try without --scope for older claude versions
-        timeout 30 claude mcp add ruflo -- npx -y ruflo@latest 2>/dev/null             && ok "Ruflo MCP server registered"             || warn "Ruflo MCP registration skipped (configure manually if needed)"
-    }
+timeout 30 claude mcp add ruflo -- npx -y ruflo@latest 2>/dev/null     && ok "Ruflo MCP server registered"     || warn "Ruflo MCP registration skipped (configure manually if needed)"
 
 # ── FIX 3: Doctor check — guarded ──
 timeout 60 npx ruflo doctor >> "$LOG" 2>&1 \
@@ -297,22 +293,32 @@ ok "Elapsed: $(elapsed)"
 # Indexes repos into knowledge graph (dependencies, call chains, execution flows)
 # Agents get blast-radius detection before making changes
 #
-# NOTE: Global binary install skipped — the gitnexus binary has GLIBC
-# compatibility issues in Debian bookworm containers. All GitNexus operations
-# run via npx instead, which handles compatibility automatically. The MCP
-# server is registered as "npx -y gitnexus mcp" and all gnx-* aliases use
-# "npx gitnexus <cmd>" — no global binary required.
+# Now running on Ubuntu 24.04 (GLIBC 2.39) — global binary works fine.
 # =============================================================================
 step 5 "GitNexus (Codebase Knowledge Graph)"
+
+# Free memory before heavy install
+npm cache clean --force >> "$LOG" 2>&1 || true
 
 # Track whether post-setup bootstrap is needed
 NEEDS_BOOTSTRAP=0
 
-# Warm the npx cache so first run is fast
-(
-    export NODE_OPTIONS="--max-old-space-size=512"
-    npx -y gitnexus --version >> "$LOG" 2>&1
-) && ok "GitNexus available via npx (no global binary — GLIBC compatibility)"     || warn "GitNexus npx cache failed — will retry on first use"
+if ! command -v gitnexus &>/dev/null; then
+    GNX_OK=0
+    (
+        export NODE_OPTIONS="--max-old-space-size=512"
+        npm install -g gitnexus >> "$LOG" 2>&1
+    ) && GNX_OK=1 || true
+
+    if [ "$GNX_OK" -eq 1 ] && command -v gitnexus &>/dev/null; then
+        ok "GitNexus installed globally"
+    else
+        warn "GitNexus install deferred to post-setup bootstrap (memory-constrained)"
+        NEEDS_BOOTSTRAP=1
+    fi
+else
+    ok "GitNexus already present"
+fi
 
 # Indexing deferred to bootstrap
 ok "GitNexus indexing scheduled for post-setup bootstrap"
@@ -384,6 +390,8 @@ if ! command -v bd &>/dev/null; then
             npm install -g @beads/bd >> "$LOG" 2>&1
         ) && BD_OK=1 || true
 
+        # Ensure npm global bin is on PATH so bd is found immediately
+        export PATH="$(npm bin -g 2>/dev/null):$PATH"
         if [ "$BD_OK" -eq 1 ] && command -v bd &>/dev/null; then
             ok "Beads installed via npm"
         fi
@@ -456,6 +464,15 @@ done
 if [ -f /etc/environment ]; then
     grep -q 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS' /etc/environment 2>/dev/null ||         echo 'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1' | sudo tee -a /etc/environment >> "$LOG" 2>&1
 fi
+# Ensure npm global bin is on PATH in all shells so bd and other npm globals are found
+NPM_GLOBAL_BIN=$(npm bin -g 2>/dev/null || echo "$HOME/.npm-global/bin")
+export PATH="$NPM_GLOBAL_BIN:$PATH"
+# Persist npm global bin to interactive shells
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$rc" ]; then
+        grep -q 'npm-global\|\.npm/bin' "$rc" 2>/dev/null ||             echo "export PATH="$NPM_GLOBAL_BIN:\$PATH"" >> "$rc"
+    fi
+done
 ok "Agent Teams enabled and persisted to .bashrc, .zshrc, /etc/environment"
 
 ok "Elapsed: $(elapsed)"
@@ -966,9 +983,11 @@ echo "[\$(date)] Bootstrap starting" >> "\$BSLOG"
 # Cap all Node operations to 512MB
 export NODE_OPTIONS="--max-old-space-size=512"
 
-# --- 1. Warm GitNexus npx cache (no global install — GLIBC compat issues) ---
-echo "[\$(date)] Warming GitNexus npx cache..." >> "\$BSLOG"
-npx -y gitnexus --version >> "\$BSLOG" 2>&1 || true
+# --- 1. Retry GitNexus install if missing ---
+if ! command -v gitnexus &>/dev/null; then
+    echo "[\$(date)] Installing GitNexus..." >> "\$BSLOG"
+    npm install -g gitnexus >> "\$BSLOG" 2>&1 || true
+fi
 
 # --- 2. Install Dolt if missing (Beads database backend) ---
 if ! command -v dolt &>/dev/null; then
@@ -1010,10 +1029,15 @@ if command -v bd &>/dev/null && [ -d "\$WORKSPACE/.git" ]; then
     fi
 fi
 
-# --- 5. Index workspace with GitNexus (always via npx — no global binary) ---
+# --- 5. Index workspace with GitNexus ---
 if [ -d "\$WORKSPACE/.git" ]; then
-    echo "[\$(date)] Indexing workspace with GitNexus (npx)..." >> "\$BSLOG"
-    (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
+    if command -v gitnexus &>/dev/null; then
+        echo "[\$(date)] Indexing workspace with GitNexus..." >> "\$BSLOG"
+        (cd "\$WORKSPACE" && gitnexus analyze >> "\$BSLOG" 2>&1) || true
+    else
+        echo "[\$(date)] Indexing workspace with GitNexus (npx fallback)..." >> "\$BSLOG"
+        (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
+    fi
 fi
 
 # --- 6. Register GitNexus MCP if not already done ---
