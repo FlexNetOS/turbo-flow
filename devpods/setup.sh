@@ -303,24 +303,8 @@ npm cache clean --force >> "$LOG" 2>&1 || true
 # Track whether post-setup bootstrap is needed
 NEEDS_BOOTSTRAP=0
 
-if ! command -v gitnexus &>/dev/null; then
-    GNX_OK=0
-    (
-        export NODE_OPTIONS="--max-old-space-size=512"
-        npm install -g gitnexus >> "$LOG" 2>&1
-    ) && GNX_OK=1 || true
-
-    if [ "$GNX_OK" -eq 1 ] && command -v gitnexus &>/dev/null; then
-        ok "GitNexus installed globally"
-    else
-        warn "GitNexus install deferred to post-setup bootstrap (memory-constrained)"
-        NEEDS_BOOTSTRAP=1
-    fi
-else
-    ok "GitNexus already present"
-fi
-
-# Indexing deferred to bootstrap
+# GitNexus via npx only — no global install, avoids OOM
+npx -y gitnexus --version >> "$LOG" 2>&1     && ok "GitNexus ready via npx"     || warn "GitNexus npx prefetch failed — will run on first use"
 ok "GitNexus indexing scheduled for post-setup bootstrap"
 
 ok "Elapsed: $(elapsed)"
@@ -397,37 +381,9 @@ if ! command -v bd &>/dev/null; then
         fi
     fi
 
-    # Final fallback: Download binary from GitHub releases
+    # Final fallback: try npx bd directly
     if [ "$BD_OK" -eq 0 ]; then
-        BD_VERSION="v1.0.8"
-        BD_ARCH=$(uname -m)
-        BD_OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-
-        case "$BD_ARCH" in
-            x86_64|amd64) BD_ARCH="amd64" ;;
-            arm64|aarch64) BD_ARCH="arm64" ;;
-            *) BD_ARCH="amd64" ;;  # fallback
-        esac
-
-        case "$BD_OS" in
-            darwin) BD_OS="darwin" ;;
-            linux) BD_OS="linux" ;;
-            *) BD_OS="linux" ;;  # fallback
-        esac
-
-        BD_URL="https://github.com/steveyegge/beads/releases/download/${BD_VERSION}/bd-${BD_OS}-${BD_ARCH}.tar.gz"
-
-        (
-            curl -fsSL "$BD_URL" | tar -xzf - -C "$HOME/.local/bin" >> "$LOG" 2>&1
-            chmod +x "$HOME/.local/bin/bd" 2>/dev/null
-        ) && BD_OK=1 || true
-
-        if [ "$BD_OK" -eq 1 ] && command -v bd &>/dev/null; then
-            ok "Beads installed via binary download"
-        else
-            warn "Beads install deferred to post-setup bootstrap"
-            NEEDS_BOOTSTRAP=1
-        fi
+        npx -y @beads/bd --version >> "$LOG" 2>&1             && BD_OK=1 && ok "Beads available via npx"             || { warn "Beads install deferred to post-setup bootstrap"; NEEDS_BOOTSTRAP=1; }
     fi
 else
     ok "Beads already present"
@@ -983,11 +939,8 @@ echo "[\$(date)] Bootstrap starting" >> "\$BSLOG"
 # Cap all Node operations to 512MB
 export NODE_OPTIONS="--max-old-space-size=512"
 
-# --- 1. Retry GitNexus install if missing ---
-if ! command -v gitnexus &>/dev/null; then
-    echo "[\$(date)] Installing GitNexus..." >> "\$BSLOG"
-    npm install -g gitnexus >> "\$BSLOG" 2>&1 || true
-fi
+# --- 1. Warm GitNexus npx cache ---
+npx -y gitnexus --version >> "\$BSLOG" 2>&1 || true
 
 # --- 2. Install Dolt if missing (Beads database backend) ---
 if ! command -v dolt &>/dev/null; then
@@ -1029,15 +982,10 @@ if command -v bd &>/dev/null && [ -d "\$WORKSPACE/.git" ]; then
     fi
 fi
 
-# --- 5. Index workspace with GitNexus ---
+# --- 5. Index workspace with GitNexus (npx) ---
 if [ -d "\$WORKSPACE/.git" ]; then
-    if command -v gitnexus &>/dev/null; then
-        echo "[\$(date)] Indexing workspace with GitNexus..." >> "\$BSLOG"
-        (cd "\$WORKSPACE" && gitnexus analyze >> "\$BSLOG" 2>&1) || true
-    else
-        echo "[\$(date)] Indexing workspace with GitNexus (npx fallback)..." >> "\$BSLOG"
-        (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
-    fi
+    echo "[\$(date)] Indexing workspace with GitNexus..." >> "\$BSLOG"
+    (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
 fi
 
 # --- 6. Register GitNexus MCP if not already done ---
