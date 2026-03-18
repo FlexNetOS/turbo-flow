@@ -297,39 +297,24 @@ ok "Elapsed: $(elapsed)"
 # Indexes repos into knowledge graph (dependencies, call chains, execution flows)
 # Agents get blast-radius detection before making changes
 #
-# FIX: npm install -g gitnexus was OOM-killed (exit 137) in memory-constrained
-# DevPod containers. Now: (a) cap Node heap to 512MB, (b) run install in a
-# subshell so OOM only kills the child, (c) gc npm cache between heavy installs,
-# (d) anything that fails or is too heavy gets picked up automatically by a
-# post-setup background bootstrap — zero manual steps.
+# NOTE: Global binary install skipped — the gitnexus binary has GLIBC
+# compatibility issues in Debian bookworm containers. All GitNexus operations
+# run via npx instead, which handles compatibility automatically. The MCP
+# server is registered as "npx -y gitnexus mcp" and all gnx-* aliases use
+# "npx gitnexus <cmd>" — no global binary required.
 # =============================================================================
 step 5 "GitNexus (Codebase Knowledge Graph)"
-
-# Free memory before heavy install — previous steps may have left npm caches
-npm cache clean --force >> "$LOG" 2>&1 || true
 
 # Track whether post-setup bootstrap is needed
 NEEDS_BOOTSTRAP=0
 
-if ! command -v gitnexus &>/dev/null; then
-    GNX_OK=0
-    (
-        export NODE_OPTIONS="--max-old-space-size=512"
-        npm install -g gitnexus >> "$LOG" 2>&1
-    ) && GNX_OK=1 || true
+# Warm the npx cache so first run is fast
+(
+    export NODE_OPTIONS="--max-old-space-size=512"
+    npx -y gitnexus --version >> "$LOG" 2>&1
+) && ok "GitNexus available via npx (no global binary — GLIBC compatibility)"     || warn "GitNexus npx cache failed — will retry on first use"
 
-    if [ "$GNX_OK" -eq 1 ] && command -v gitnexus &>/dev/null; then
-        ok "GitNexus installed globally"
-    else
-        warn "GitNexus install deferred to post-setup bootstrap (memory-constrained)"
-        NEEDS_BOOTSTRAP=1
-    fi
-else
-    ok "GitNexus already present"
-fi
-
-# Indexing always deferred to bootstrap (runs in background after setup exits
-# and all npm install memory is freed)
+# Indexing deferred to bootstrap
 ok "GitNexus indexing scheduled for post-setup bootstrap"
 
 ok "Elapsed: $(elapsed)"
@@ -981,11 +966,9 @@ echo "[\$(date)] Bootstrap starting" >> "\$BSLOG"
 # Cap all Node operations to 512MB
 export NODE_OPTIONS="--max-old-space-size=512"
 
-# --- 1. Retry GitNexus install if missing ---
-if ! command -v gitnexus &>/dev/null; then
-    echo "[\$(date)] Installing GitNexus..." >> "\$BSLOG"
-    npm install -g gitnexus >> "\$BSLOG" 2>&1 || true
-fi
+# --- 1. Warm GitNexus npx cache (no global install — GLIBC compat issues) ---
+echo "[\$(date)] Warming GitNexus npx cache..." >> "\$BSLOG"
+npx -y gitnexus --version >> "\$BSLOG" 2>&1 || true
 
 # --- 2. Install Dolt if missing (Beads database backend) ---
 if ! command -v dolt &>/dev/null; then
@@ -1027,16 +1010,10 @@ if command -v bd &>/dev/null && [ -d "\$WORKSPACE/.git" ]; then
     fi
 fi
 
-# --- 5. Index workspace with GitNexus ---
+# --- 5. Index workspace with GitNexus (always via npx — no global binary) ---
 if [ -d "\$WORKSPACE/.git" ]; then
-    if command -v gitnexus &>/dev/null; then
-        echo "[\$(date)] Indexing workspace with GitNexus..." >> "\$BSLOG"
-        (cd "\$WORKSPACE" && gitnexus analyze >> "\$BSLOG" 2>&1) || true
-    else
-        # Fallback to npx with tight memory
-        echo "[\$(date)] Indexing workspace with GitNexus (npx)..." >> "\$BSLOG"
-        (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
-    fi
+    echo "[\$(date)] Indexing workspace with GitNexus (npx)..." >> "\$BSLOG"
+    (cd "\$WORKSPACE" && npx -y gitnexus analyze >> "\$BSLOG" 2>&1) || true
 fi
 
 # --- 6. Register GitNexus MCP if not already done ---
