@@ -108,16 +108,16 @@ devpod up https://github.com/marcuspat/turbo-flow --ide vscode
 
 ```
 Push to GitHub → Open in Codespace → .devcontainer runs automatically.
-The devpods/setup.sh script installs the complete stack.
+The setup-turboflow-4.sh script installs the complete stack.
 ```
 
 ### Manual install
 
 ```bash
 git clone https://github.com/marcuspat/turbo-flow -b main
-cd turbo-flow
-chmod +x devpods/setup.sh
-./devpods/setup.sh
+cd turbo-flow/v4
+chmod +x .devcontainer/setup-turboflow-4.sh
+./.devcontainer/setup-turboflow-4.sh
 source ~/.bashrc
 turbo-status
 ```
@@ -154,7 +154,7 @@ npx ruflo@latest hooks pretrain
 ### Post-setup verification (13 checks)
 
 ```bash
-./post-devpods/setup.sh    # Runs 13 automated checks on the full stack
+./post-setup-turboflow-4.sh    # Runs 13 automated checks on the full stack
 ```
 
 ### Generate CLAUDE.md from project context
@@ -172,7 +172,7 @@ npx ruflo@latest hooks pretrain
 ### UI UX Pro Max skill (design)
 
 ```bash
-# Installed as part of Step 4 of devpods/setup.sh
+# Installed as part of Step 4 of setup-turboflow-4.sh
 # uipro-cli provides: component patterns, accessibility, responsive layouts, design tokens
 # Auto-activated when describing UI/UX work — no manual invocation needed
 ```
@@ -764,7 +764,7 @@ bd daemon start                  # Start auto-sync daemon
 bd daemon stop                   # Stop daemon
 ```
 
-### TurboFlow Aliases (shell wrappers from devpods/setup.sh)
+### TurboFlow Aliases (shell wrappers from setup-turboflow-4.sh)
 
 ```bash
 bd-ready             # → bd ready (check project state)
@@ -1613,7 +1613,7 @@ devpod delete [workspace]                              # Delete workspace
 
 ### GitHub Codespaces
 
-Push to GitHub → Open in Codespace → `.devcontainer/devcontainer.json` triggers `devpods/setup.sh` automatically. See `github_codespaces_setup.md` for details.
+Push to GitHub → Open in Codespace → `.devcontainer/devcontainer.json` triggers `setup-turboflow-4.sh` automatically. See `github_codespaces_setup.md` for details.
 
 ### Rackspace Spot Instances
 
@@ -1695,7 +1695,7 @@ Update [package] from [old version] to [new version]:
 
 ```
 I just cloned [repo-url]. Onboard me completely:
-1. Run devpods/setup.sh (or rf-init if TF already installed)
+1. Run setup-turboflow-4.sh (or rf-init if TF already installed)
 2. gitnexus analyze — build the knowledge graph
 3. gitnexus wiki — generate repo documentation
 4. gitnexus serve — start visual explorer so I can browse the graph
@@ -1799,7 +1799,7 @@ Show me the current provider configuration and cost breakdown.
 
 ```
 Day 1 — Onboard:
-1. Clone the repo, run devpods/setup.sh
+1. Clone the repo, run setup-turboflow-4.sh
 2. gnx-analyze — build knowledge graph
 3. gnx-wiki — generate repo documentation for myself
 4. hooks-train — deep pretrain on codebase
@@ -2034,7 +2034,7 @@ HANDOFF:    bd create (remaining work) → bd close (done items) → gnx-analyze
 
 ### All Aliases → Native Commands
 
-> **Note:** These are TurboFlow shell aliases defined in `devpods/setup.sh`. They wrap the native CLIs (`ruflo`, `bd`, `gitnexus`, `openspec`). If an alias doesn't work, use the native command directly.
+> **Note:** These are TurboFlow shell aliases defined in `setup-turboflow-4.sh`. They wrap the native CLIs (`ruflo`, `bd`, `gitnexus`, `openspec`). If an alias doesn't work, use the native command directly.
 
 | Alias | Native Command |
 |-------|---------------|

@@ -338,7 +338,7 @@ if ! command -v bd &>/dev/null; then
     BD_OK=0
     (
         export NODE_OPTIONS="--max-old-space-size=512"
-        npm install -g @beads/bd >> "$LOG" 2>&1
+        npm install -g beads-cli >> "$LOG" 2>&1
     ) && BD_OK=1 || true
 
     if [ "$BD_OK" -eq 1 ] && command -v bd &>/dev/null; then
@@ -730,7 +730,7 @@ turbo-status() {
     npx ruflo@latest --version 2>/dev/null && echo "  ✓ Ruflo" || echo "  ✗ Ruflo"
     echo ""
     echo "Memory:"
-    bd --version 2>/dev/null && echo "  ✓ Beads" || echo "  ✗ Beads (install: npm i -g @beads/bd)"
+    bd --version 2>/dev/null && echo "  ✓ Beads" || echo "  ✗ Beads (install: npm i -g beads-cli)"
     echo "  Agent Teams: ${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-off}"
     echo ""
     echo "Plugins:"
@@ -886,7 +886,7 @@ fi
 # --- 2. Retry Beads install if missing ---
 if ! command -v bd &>/dev/null; then
     echo "[\$(date)] Installing Beads..." >> "\$BSLOG"
-    npm install -g @beads/bd >> "\$BSLOG" 2>&1 || true
+    npm install -g beads-cli >> "\$BSLOG" 2>&1 || true
 fi
 if ! command -v bd &>/dev/null; then
     pip install --user beads >> "\$BSLOG" 2>&1 || true

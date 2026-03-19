@@ -58,9 +58,9 @@ devpod up https://github.com/marcuspat/turbo-flow --ide vscode
 
 ```bash
 git clone https://github.com/marcuspat/turbo-flow -b main
-cd turbo-flow
-chmod +x devpods/setup.sh
-./devpods/setup.sh
+cd turbo-flow/v4
+chmod +x .devcontainer/setup-turboflow-4.sh
+./.devcontainer/setup-turboflow-4.sh
 source ~/.bashrc
 turbo-status
 ```
@@ -1200,7 +1200,7 @@ Give me: architecture summary, dependencies, hot paths, technical debt.
 
 ```
 Day 1 — Onboard:
-1. Clone the repo, run devpods/setup.sh
+1. Clone the repo, run setup-turboflow-4.sh
 2. gnx-analyze → gnx-wiki → hooks-train
 3. bd init && bd ready --json
 4. neural-patterns — understand conventions

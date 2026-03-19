@@ -3,7 +3,7 @@
 # TurboFlow 4.0 Post-Setup Verification Script
 # Replaces: post-setup.sh from v3.4.1
 #
-# Verifies and configures all components installed by devpods/setup.sh:
+# Verifies and configures all components installed by setup-turboflow-4.sh:
 #   - Claude Code + Ruflo v3.5
 #   - 6 Ruflo plugins + OpenSpec
 #   - GitNexus codebase knowledge graph
@@ -104,7 +104,7 @@ if command -v claude >/dev/null 2>&1; then
     success "Claude Code $(claude --version 2>/dev/null | head -1)"
     ((PASS++))
 else
-    fail "Claude Code not found — run devpods/setup.sh first"
+    fail "Claude Code not found — run setup-turboflow-4.sh first"
     ((ISSUES++))
 fi
 
@@ -272,7 +272,7 @@ if command -v bd >/dev/null 2>&1; then
     success "Beads CLI installed"
     ((PASS++))
 else
-    warning "Beads not installed — run: npm i -g @beads/bd"
+    warning "Beads not installed — run: npm i -g beads-cli"
     ((ISSUES++))
 fi
 
@@ -328,7 +328,7 @@ if [ -f "$ALIAS_FILE" ]; then
         ((ISSUES++))
     fi
 else
-    fail "Alias file missing — run devpods/setup.sh"
+    fail "Alias file missing — run setup-turboflow-4.sh"
     ((ISSUES++))
 fi
 
@@ -373,7 +373,7 @@ if [ -f "$STATUSLINE_SCRIPT" ]; then
         ((ISSUES++))
     fi
 else
-    fail "Statusline script missing — run devpods/setup.sh"
+    fail "Statusline script missing — run setup-turboflow-4.sh"
     ((ISSUES++))
 fi
 
@@ -403,7 +403,7 @@ if [ -f "$WORKSPACE/CLAUDE.md" ]; then
         ((ISSUES++))
     fi
 else
-    fail "CLAUDE.md missing — run devpods/setup.sh"
+    fail "CLAUDE.md missing — run setup-turboflow-4.sh"
     ((ISSUES++))
 fi
 

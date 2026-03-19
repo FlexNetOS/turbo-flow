@@ -139,9 +139,9 @@ devpod up https://github.com/marcuspat/turbo-flow --ide vscode
 
 # Manual
 git clone https://github.com/marcuspat/turbo-flow -b main
-cd turbo-flow
-chmod +x devpods/setup.sh
-./devpods/setup.sh
+cd turbo-flow/v4
+chmod +x .devcontainer/setup-turboflow-4.sh
+./.devcontainer/setup-turboflow-4.sh
 source ~/.bashrc
 turbo-status
 ```
@@ -150,7 +150,7 @@ turbo-status
 
 ## What Gets Installed
 
-The `devpods/setup.sh` script installs the complete stack in **10 automated steps**:
+The `setup-turboflow-4.sh` script installs the complete stack in **10 automated steps**:
 
 ### Step 1: System Prerequisites
 
@@ -203,7 +203,7 @@ The `devpods/setup.sh` script installs the complete stack in **10 automated step
 
 | Component | Purpose |
 |:----------|:--------|
-| `@beads/bd` | Git-native JSONL project memory — issues, decisions, blockers |
+| `beads-cli` | Git-native JSONL project memory — issues, decisions, blockers |
 
 ### Step 7: Workspace + Agent Teams
 
@@ -373,12 +373,13 @@ gnx-wiki             # Generate repo wiki from graph
 turbo-flow/
 ├── V3/                          ← archived v3.0-v3.4.1 (Claude Flow era)
 ├── .claude/                     ← skills, agents, settings
-├── devpods/
-│   ├── setup.sh                 ← main setup script
-│   ├── post-setup.sh            ← post-setup verification
-│   └── context/                 ← devpod context files
+├── .devcontainer/
+│   ├── devcontainer.json
+│   ├── setup-turboflow-4.sh
+│   └── post-setup-turboflow-4.sh
 ├── scripts/
 │   └── generate-claude-md.sh
+├── devpods/context/            ← devpod context files
 ├── CLAUDE.md                    ← workspace context (active)
 └── README.md
 ```
@@ -398,7 +399,7 @@ turbo-status
 turbo-help
 
 # 4. Run post-setup verification (13 checks)
-# ./devpods/post-setup.sh
+# ./.devcontainer/post-setup-turboflow-4.sh
 ```
 
 ---
