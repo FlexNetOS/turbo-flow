@@ -219,6 +219,7 @@ ok "Elapsed: $(elapsed)"
 # Free memory between heavy install phases
 npm cache clean --force >> "$LOG" 2>&1 || true
 
+cat /tmp/turboflow-setup.log | grep -i "error\|EACCES\|permission\|ENOMEM\|404\|not found" | head -30
 # =============================================================================
 # STEP 4: UI UX Pro Max Skill
 # Design system skill for Claude Code — component patterns, accessibility,
