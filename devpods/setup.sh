@@ -117,69 +117,35 @@ ok "Elapsed: $(elapsed)"
 # browser tools), observability, gating, multi-model routing
 # This single install replaces: claude-flow@alpha, @ruvector/cli, @ruvector/sona,
 # @claude-flow/browser, agentic-flow, security-analyzer, ui-ux-pro-max
+#
+# FIX 11: Native installer is now primary (npm method deprecated by Anthropic).
+#         Old version piped to sh which broke on dash-based systems.
+#         Now pipes to bash explicitly.
+# FIX 12: npm fallback respects NPM_CONFIG_PREFIX from containerEnv so
+#         global installs go to ~/.npm-global/ instead of /usr/local/.
 # =============================================================================
 step 2 "Claude Code + Ruflo v3.5"
 
-# Claude Code
+# Claude Code — native installer is primary (npm is deprecated upstream)
 if ! command -v claude &>/dev/null; then
-    npm install -g @anthropic-ai/claude-code >> "$LOG" 2>&1 || true
+    # Method 1: Native installer (recommended by Anthropic, no npm needed)
+    curl -fsSL https://claude.ai/install.sh 2>/dev/null | bash >> "$LOG" 2>&1 || true
+    export PATH="$HOME/.local/bin:$HOME/.claude/bin:$PATH"
+
     if command -v claude &>/dev/null; then
-        ok "Claude Code installed"
+        ok "Claude Code installed (native installer)"
     else
-        # Fallback to official installer
-        curl -fsSL https://claude.ai/install.sh 2>/dev/null | sh 2>&1 || true
-        export PATH="$HOME/.local/bin:$HOME/.claude/bin:$PATH"
+        # Method 2: npm fallback (needs NPM_CONFIG_PREFIX set for non-root users)
+        npm install -g @anthropic-ai/claude-code >> "$LOG" 2>&1 || true
         if command -v claude &>/dev/null; then
-            ok "Claude Code installed via official installer"
+            ok "Claude Code installed (npm)"
         else
-            fail "Claude Code install failed — install manually: npm i -g @anthropic-ai/claude-code"
+            fail "Claude Code install failed — try manually: curl -fsSL https://claude.ai/install.sh | bash"
         fi
     fi
 else
     ok "Claude Code $(claude --version 2>/dev/null | head -1 || echo 'present')"
 fi
-
-# ── FIX 1: Ruflo init — handle "already initialized" without crashing ──
-# npx ruflo@latest init returns non-zero when already initialized.
-# With set -e, this killed the entire script. Now we check the exit code
-# and treat "already initialized" as success.
-RUFLO_INIT_OUTPUT=""
-RUFLO_INIT_RC=0
-RUFLO_INIT_OUTPUT=$(npx ruflo@latest init --wizard 2>&1) || RUFLO_INIT_RC=$?
-
-if [ $RUFLO_INIT_RC -eq 0 ]; then
-    ok "Ruflo v3.5 initialized (includes RuVector, AgentDB, SONA, skills, browser, observability)"
-elif echo "$RUFLO_INIT_OUTPUT" | grep -qi "already initialized\|already exists\|Found:"; then
-    ok "Ruflo v3.5 already initialized (skipped re-init)"
-else
-    # Actually failed — try without --wizard
-    RUFLO_INIT_OUTPUT2=""
-    RUFLO_INIT_RC2=0
-    RUFLO_INIT_OUTPUT2=$(npx ruflo@latest init 2>&1) || RUFLO_INIT_RC2=$?
-    if [ $RUFLO_INIT_RC2 -eq 0 ]; then
-        ok "Ruflo v3.5 initialized (no wizard)"
-    elif echo "$RUFLO_INIT_OUTPUT2" | grep -qi "already initialized\|already exists\|Found:"; then
-        ok "Ruflo v3.5 already initialized"
-    else
-        warn "Ruflo init returned code $RUFLO_INIT_RC2 — continuing (may need manual: npx ruflo@latest init --force)"
-        echo "$RUFLO_INIT_OUTPUT2" >> "$LOG" 2>&1
-    fi
-fi
-
-# ── FIX 2: MCP registration — fully guarded ──
-# claude mcp commands can fail for many reasons (no auth, no config dir, etc.)
-# None of these should abort the script.
-claude mcp remove claude-flow 2>/dev/null || true
-claude mcp add ruflo -- npx -y ruflo@latest 2>/dev/null \
-    && ok "Ruflo MCP server registered" \
-    || warn "Ruflo MCP registration skipped (configure manually if needed)"
-
-# ── FIX 3: Doctor check — guarded ──
-npx ruflo doctor --fix >> "$LOG" 2>&1 \
-    && ok "Ruflo doctor passed" \
-    || warn "Ruflo doctor had issues (check $LOG)"
-
-ok "Elapsed: $(elapsed)"
 
 # =============================================================================
 # STEP 3: Ruflo Plugins (6 — development-relevant only)
