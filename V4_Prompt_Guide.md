@@ -97,6 +97,48 @@ The team invitation flow doesn't work yet. Make it work end to end — invites, 
 
 **What happens:** It recalls prior solutions from memory + AgentDB → reads code + checks blast radius → generates a TodoWrite → shows you the plan → waits for your "proceed" → executes in parallel → runs tests → stores what it learned.
 
+### Batch execution from ADR/DDD
+
+After you've completed your ADR/DDD planning and have a structured list of work items, paste this to execute them all sequentially without stopping between items:
+
+```
+Execute the following batch in order. For each item:
+- Read the relevant files first
+- Run gitnexus_impact on symbols you'll touch
+- Implement the change
+- Run tests after each item
+- Log a bead when done (bd close or bd create for discovered work)
+- Store any patterns learned (ruv-remember)
+- Show the Status HUD after each item completes
+- Do NOT stop to ask between items — only stop if tests fail or you hit a blocker
+
+If any item fails or creates a conflict, log it as a blocker bead and continue to the next independent item. At the end, give me a summary of what completed, what failed, and what needs attention.
+
+BATCH:
+1. [ADR-001] — [description of what to implement]
+2. [ADR-002] — [description of what to implement]
+3. [ADR-003] — [description of what to implement]
+4. [ADR-004] — [description of what to implement]
+5. [ADR-005] — [description of what to implement]
+...
+```
+
+**Tips for writing good batch items:**
+- Each item should be one bounded context or one ADR — not "build the whole app"
+- Order by dependency — items that others depend on go first
+- Include the ADR number so the agent can reference your planning docs
+- If items are independent, say so — the agent will parallelize with worktrees
+
+**Short version** when you already have beads for everything:
+```
+Execute all ready beads in dependency order. Don't stop between items. Log results. Summary at the end.
+```
+
+**From a plan file:**
+```
+Read plans/research/PLAN.md. Execute every ADR in order as a batch. Don't stop between items unless tests fail. aqe-gate after each context. Summary at the end.
+```
+
 ---
 
 ## 3. DURING A SESSION
