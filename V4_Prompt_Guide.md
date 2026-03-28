@@ -390,6 +390,41 @@ Execute the full plan. No confirmation needed on individual steps — just the f
 
 ---
 
+## What's Automatic vs What You Trigger
+
+### Tier 1: Truly automatic — fires without anyone doing anything
+Hooks registered in `.claude/settings.json`. No one chooses to run these — they fire on events:
+- **Context Autopilot** — archives every turn, blocks context loss, restores on session start
+- **Pre-edit verification** — checks for secrets, mocks in prod, HTTPS before any file write
+- **Post-edit learning** — records outcomes, updates Q-table routing after every edit
+- **GitNexus auto-index** — re-indexes after `git commit` and `git merge`
+- **Intelligence routing** — Q-learning picks Opus/Sonnet/Haiku per task automatically
+- **Agent Booster** — WASM transforms (var-to-const, add-types) skip LLM entirely, $0
+
+### Tier 2: Agent follows CLAUDE.md rules — you don't need to ask
+The CLAUDE.md says "MUST" and the agent obeys. You never need to say "use gitnexus" or "check beads" — these happen because the rules require them:
+- `gitnexus_impact` before editing any symbol
+- `gitnexus_detect_changes` before committing
+- `agentdb_pattern-search` before solving any bug
+- Beads for all issue tracking (no markdown TODOs)
+- Tests before every commit
+- Status HUD after every action
+- Triple-Gate for merges to main
+- Mandatory `git push` at session end
+- 3-strikes escalation (stop after 3 failed attempts)
+
+### Tier 3: You trigger it — agent executes
+These need you to say something:
+- **Swarm/Agent Teams** — "spin up a swarm" or "spawn 3 reviewers"
+- **Hive-Mind** — "initialize a multi-day sprint"
+- **Batch execution** — you paste the batch prompt with your ADR list
+- **Full aqe-gate** — agent runs it per-context automatically, but you decide when to gate the full codebase
+- **Branch analysis** — you paste the analysis prompt post-boot
+
+**Bottom line:** After boot, you describe outcomes. Tier 1 runs silently. Tier 2 runs because the CLAUDE.md tells the agent to. You only manually trigger Tier 3 when you need parallel work, batch runs, or full-codebase quality gates.
+
+---
+
 ## The One Rule
 
 You describe **what** you want. Not **how** to do it.
