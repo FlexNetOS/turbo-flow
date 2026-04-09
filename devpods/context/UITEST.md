@@ -1496,9 +1496,80 @@ Guardrail: **$15/hr max**. If cost exceeds this, qa-lead pauses non-critical age
 3. **NEVER** modify database directly. All actions go through the UI or documented APIs.
 4. **ALL** fix swarms must pass aqe-gate before merging.
 5. **ALL** merges to main require Triple-Gate (3 human confirmations).
-6. After **3 failed fix attempts** on the same bug, escalate to human via `bd human {bug-id}`.
-7. **ALWAYS** commit and push before ending a session: `bd dolt push && git push`.
-8. If the target application is unreachable for > 60 seconds, pause all agents and alert human.
+6. **NEVER** force-push to `main` under any circumstances.
+7. After **3 failed fix attempts** on the same bug, escalate to human via `bd human {bug-id}`.
+8. **ALWAYS** commit and push before ending a session: `bd dolt push && git push`.
+9. If the target application is unreachable for > 60 seconds, pause all agents and alert human.
+
+---
+
+## Triple-Gate Merge Protocol
+
+Any merge, rebase, or push into `main` (also `master`, `production`, `prod`, `release`) requires **3 consecutive human confirmations in separate turns**. No agent may merge to main autonomously. This applies to fix swarm merges into main after UAT.
+
+```
+GATE 1 — "🔒 MERGE GATE 1/3: Merging [branch] → main. [summary of changes, commit count, risk level]. Confirm?"
+GATE 2 — "🔒 MERGE GATE 2/3: Tests: [pass/fail]. Conflicts: [y/n]. Uncommitted: [y/n]. Confirm?"
+GATE 3 — "🔒 MERGE GATE 3/3: FINAL. Type 'yes' to execute."
+```
+
+**Rules:**
+- Each gate = separate conversation turn. The human must respond before the next gate.
+- Non-`yes` at ANY gate = abort the merge immediately.
+- Sub-agents (fix swarms, test agents) CANNOT merge to main — they must escalate to qa-lead, who escalates to the human.
+- Hotfixes are NOT exempt — Triple-Gate still applies.
+- Does NOT apply to feature-to-feature branch merges (e.g., `fix-bug-42` → `uitest-working`). Only to merges into primary branches.
+
+**In the UITEST context:** Fix swarms commit to their own worktree branches. The qa-lead merges fix branches into the uitest working branch freely. But when it's time to merge the final tested+fixed code back into `main`, Triple-Gate fires and the human must confirm 3 times.
+
+---
+
+## Destructive Command Safeguards
+
+One human confirmation required before executing any of these:
+
+- `git reset --hard`
+- `rm -rf` on project directories
+- `prisma migrate reset`
+- `DROP TABLE` or any destructive SQL
+- Any `--force` flag that deletes data
+
+Format: `⚠️ DESTRUCTIVE: [command]. [what will be lost]. Confirm?`
+
+---
+
+## Rollback Protocol
+
+If main breaks after a merge:
+
+```bash
+# 1. Immediate revert (skips Triple-Gate — this is an emergency)
+git revert --no-commit HEAD
+
+# 2. Verify the revert fixes the break
+npm test    # or whatever the test command is
+npm run build
+
+# 3. Commit and push the revert
+git commit -m "revert: [branch] — [reason]"
+git push
+
+# 4. Report to human
+echo "⚠️ REVERTED: [branch] merge was reverted because [symptoms]"
+
+# 5. Track it
+bd create "[branch] reverted — [root cause]" -t bug -p 0 --json
+ruv-remember "revert/[branch]" "Cause: [explanation]. Fix needed: [what to do]"
+```
+
+---
+
+## Conflict Resolution
+
+- **NEVER** silently auto-resolve merge conflicts.
+- **Simple conflicts** (non-overlapping, different sections of the file): resolve + show the human what was resolved.
+- **Complex conflicts** (overlapping logic, same function modified by multiple agents): show both sides to the human and ask which to keep.
+- **ALWAYS** run tests + `gitnexus_detect_changes` after resolving any conflict.
 
 ---
 
